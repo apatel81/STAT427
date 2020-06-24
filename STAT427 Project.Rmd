@@ -1,0 +1,317 @@
+---
+title: "427 Project"
+author: "Alex Garcia and Ajay Patel"
+output:
+  html_document:
+    df_print: paged
+---
+In this project we wanted to investigate how changing sample size, between group variance, and within group variance all affect the Power of the F Distribution. After working through this investigation, our goal was to take COVID-19 data and run an F-test on the data to see how COVID-19 deaths differ in each state. Lastly, we ran a bootstrap simulation to estimate the true proportion of deaths after being positively diagnosed with COVID-19. 
+```{r}
+library(tidyverse)
+```
+
+###Figure 1: F Distribution at Various Degrees of Freedom###
+From the plot below, we see how different numerator and denominator degrees of freedom affect the shape of the F distribution. Generally, increasing the degrees of freedom for an F distribution lowers the right tail of the distribution, pushing more density closer to F = 0. This is best represented through the teal F(10,20) distribution whose right tail is lower than the rest, but peak is higher than the others. 
+```{r}
+data.frame(f = 0:1000 / 100) %>% 
+  mutate(df_10_20 = df(x = f, df1 = 10, df2 = 20),
+  df_05_10 = df(x = f, df1 = 5, df2 = 10),
+  df_05_20 = df(x = f, df1 = 5, df2 = 20),
+  df_15_05 = df(x = f, df1 = 15, df2 = 5)) %>%
+  gather(key = "df", value = "density", -f) %>%
+  ggplot() + geom_line(aes(x = f, y = density, color = df)) + labs(title = "F at Various Degrees of Freedom",
+       x = "F",
+       y = "Density")
+```
+
+###Figure 2: Sample Size Required for Power = 0.8 at Differing Levels of Variation###
+In Figure 2 we see that as the Variance Within Groups increases, we need an increased sample size at each level of Between Group Variance in order to achieve Power = 0.8. Notice that as the Variance Between Groups increases, the sample size needed to achieve Power = 0.8 decreases. For lower variation within the groups, a smaller sample size is necessary to achieve the desired power. However, when the variance between groups gets large enough, the variance within groups no longer has as much of an effect on the necessary sample size.  This indicates that as groups are more and more dissimilar from each other but at the same time show more similarity within their own group, the sample size required to Reject the Null Hypothesis decreases. 
+```{r}
+power = 0.8
+alpha0 = 0.05
+betweenVAR = seq(5, 50, 5)
+withinVAR1 = seq(20, 40, 5)
+scenarios = expand.grid(power, betweenVAR, withinVAR1, alpha0)
+names(scenarios) = c("power", "Variance Between Groups", "Variance Within Groups", "Alpha")
+
+
+n = unlist(mapply(power.anova.test,
+                      groups = 3, 
+                      power = scenarios$power,
+                      between.var = scenarios$`Variance Between Groups`,
+                      within.var = scenarios$`Variance Within Groups`,
+                      sig.level = scenarios$Alpha)["n", ])
+
+scenarios = cbind(scenarios, n)
+scenarios
+
+ggplot(scenarios, aes(x=`Variance Between Groups`, y=n, color = `Variance Within Groups`)) + geom_point() + 
+ggtitle("Sample Size Required to Obtain Power = 0.8 as Between Group Variance Increases") + theme_bw()
+```
+
+###Figure 3: Effect of Sample Size on Power###
+In general, we see in the plot below that as the sample size increases, power generally increases. At this fixed level of Within and Between Group Variance, we see that increasing the sample size in increments of 10 adds about 0.2 power each time. The general trend of association between increasing sample size and power is true of any level of within and between group variance, though this specific observed slope may be dependent on the levels of between and within group variance. With an added effect of low Within Group Variance and large Between Group Variance, small increases in sample size can tremendously increase Power. 
+
+Note: Variance Between Groups held at 15, Variance Within Groups at 100 
+```{r}
+n = seq(10, 50, 5)
+alpha0 = 0.05
+betweenVAR = 15
+withinVAR = 100
+
+scenarios = expand.grid(n, betweenVAR, withinVAR, alpha0)
+names(scenarios) = c("n", "Variance Between Groups", "Variance Within Groups", "Alpha")
+
+power = unlist(mapply(power.anova.test,
+                      groups = 3, 
+                      n = scenarios$n,
+                      between.var = scenarios$`Variance Between Groups`,
+                      within.var = scenarios$`Variance Within Groups`,
+                      sig.level = scenarios$Alpha)["power", ])
+
+scenarios = cbind(scenarios, power)
+scenarios
+
+ggplot(scenarios, aes(x=n, y=power)) + geom_point() + ggtitle("Effect of Sample Size on Power")
+```
+
+###Figure 4: Effect of Sample Size on Power for Differing Variance Between Groups###
+In Figure 4, we see that low Variance Between Groups and low sample size indicates low power. Notice that how as n increases, our Power increases as noted before in Figures 2 and 3. However, notice here that even at low Between Group Variance, say 20, an increase in sample size from 10 to 50 increased Power from 0.3 to 0.9. Increasing the sample size in the case of low between group variation leads to a larger increase in power than the same sample size increase for groups who have higher between group variation. This makes sense as the groups with high between group variation will have differences that are easier to detect, meaning higher power even with a small sample size. This is represented with the light blue points in Figure 4 who’s increase in power as n increases is much lower than the darker blue points. Once again, we can see here that as Variance Between Groups increases, meaning there is more disparity between groups, our ability to detect these said differences between groups increases. 
+
+Note: Variance Within Groups held at 100
+```{r}
+n = seq(10, 50, 5)
+alpha0 = 0.05
+betweenVAR = seq(15, 70, 5)
+withinVAR = 100
+
+scenarios = expand.grid(n, betweenVAR, withinVAR, alpha0)
+names(scenarios) = c("n", "Variance Between Groups", "Variance Within Groups", "Alpha")
+
+power = unlist(mapply(power.anova.test,
+                      groups = 3, 
+                      n = scenarios$n,
+                      between.var = scenarios$`Variance Between Groups`,
+                      within.var = scenarios$`Variance Within Groups`,
+                      sig.level = scenarios$Alpha)["power", ])
+
+scenarios = cbind(scenarios, power)
+scenarios
+
+ggplot(scenarios, aes(x=n, y=power, color = `Variance Between Groups`)) + geom_point() + ggtitle("Effect of Sample Size on Power for Differing Variance Between Groups") + theme_bw()
+```
+
+###Figure 5: Power of the F Test as Between Group Variance Increases###
+In general, at a fixed level of Within Group Variance, as the Variance Between Groups increases, the Power of the F-Test increases. This is similar to the trend observed in Figure 4, this time holding n constant.
+
+Note: sample size = 20, Variance Within Groups = 100
+```{r}
+n = 20
+alpha0 = 0.05
+betweenVAR = seq(5, 50, 5)
+withinVAR = 100
+
+scenarios = expand.grid(n, betweenVAR, withinVAR, alpha0)
+names(scenarios) = c("n", "Variance Between Groups", "Variance Within Groups", "Alpha")
+
+power = unlist(mapply(power.anova.test,
+                      groups = 3, 
+                      n = scenarios$n,
+                      between.var = scenarios$`Variance Between Groups`,
+                      within.var = scenarios$`Variance Within Groups`,
+                      sig.level = scenarios$Alpha)["power", ])
+
+scenarios = cbind(scenarios, power)
+scenarios
+
+ggplot(scenarios, aes(x=`Variance Between Groups`, y=power)) + geom_point() + 
+  ggtitle("Power of the F Test as Between Group Variance Increases")
+```
+
+###Figure 6: Power vs Variation Between Groups, Within Group Variance Changing###
+In Figure 5, we saw that Power of the F Test increases as the Variance Between Groups increases. Note here in Figure 6 that even as Between Group Variance increases, high within group variance results in very low power, compared to groups with lower within group variation. Once the between group variation is high enough, however, we see the drastic differences in power between groups with high within group variance and low within group variance largely go away. 
+
+Note: sample size held at 20
+```{r}
+n = 20
+alpha0 = 0.05
+betweenVAR = seq(5, 50, 5)
+withinVAR = seq(50,150, 10)
+
+scenarios = expand.grid(n, betweenVAR, withinVAR, alpha0)
+names(scenarios) = c("n", "Variance Between Groups", "Variance Within Groups", "Alpha")
+
+power = unlist(mapply(power.anova.test,
+                      groups = 3, 
+                      n = scenarios$n,
+                      between.var = scenarios$`Variance Between Groups`,
+                      within.var = scenarios$`Variance Within Groups`,
+                      sig.level = scenarios$Alpha)["power", ])
+
+scenarios = cbind(scenarios, power)
+scenarios
+
+ggplot(scenarios, aes(x=`Variance Between Groups`, y=power, color = `Variance Within Groups`)) + geom_point() + 
+  ggtitle("Power vs Variation Between Groups, Within Group Variance Changing ") + theme_bw() 
+```
+
+###Figure 7: Power of the F Test as Variance Within Groups Increases###
+In Figure 7, we see that as the Variance Within Groups increases, the Power of the F Test decreases, meaning that as observations within groups are more dissimilar, it becomes more difficult for the F Test to recognize differences between groups.
+
+Note: sample size held at 20, Variance Between Groups held at 15
+```{r}
+n = 20
+alpha0 = 0.05
+betweenVAR = 15
+withinVAR = seq(10, 150, 10)
+
+scenarios = expand.grid(n, betweenVAR, withinVAR, alpha0)
+names(scenarios) = c("n", "Variance Between Groups", "Variance Within Groups", "Alpha")
+
+power = unlist(mapply(power.anova.test,
+                      groups = 3, 
+                      n = scenarios$n,
+                      between.var = scenarios$`Variance Between Groups`,
+                      within.var = scenarios$`Variance Within Groups`,
+                      sig.level = scenarios$Alpha)["power", ])
+
+scenarios = cbind(scenarios, power)
+scenarios
+
+ggplot(scenarios, aes(x=`Variance Within Groups`, y=power)) + geom_point() +
+  ggtitle("Power of the F Test as Variance Within Groups Increases")
+```
+
+###Figure 8: Power of the F Test as Variance Within Groups Increases###
+One way to compensate for high Variance Within Groups is to increase sample size. In Figure 8 below, note that as sample size increases, power increases even when Within Group Variance is large. This indicates that increasing sample sizes can help achieve relatively high power for populations with high within group variability. 
+
+Note: Variance between groups held at 15
+```{r}
+n = seq(10, 80, 10)
+alpha0 = 0.05
+betweenVAR = 15
+withinVAR = seq(10, 150, 10)
+
+scenarios = expand.grid(n, betweenVAR, withinVAR, alpha0)
+names(scenarios) = c("n", "Variance Between Groups", "Variance Within Groups", "Alpha")
+
+power = unlist(mapply(power.anova.test,
+                      groups = 3, 
+                      n = scenarios$n,
+                      between.var = scenarios$`Variance Between Groups`,
+                      within.var = scenarios$`Variance Within Groups`,
+                      sig.level = scenarios$Alpha)["power", ])
+
+scenarios = cbind(scenarios, power)
+scenarios
+
+ggplot(scenarios, aes(x=`Variance Within Groups`, y=power, color = n)) + geom_point() +
+  ggtitle("Power of the F Test as Variance Within Groups Increases") + theme_bw()
+```
+
+###Figure 9: Required n for Power = 0.9 as Variance Within Groups Increases###
+This figure is similar to Figure 2, but the role of variance between groups and variance within groups has been switched. This shows off that for a constant variance between groups, required n for a certain power increases linearly with increases in variance within groups.
+```{r}
+power = 0.9
+alpha0 = 0.05
+betweenVAR = seq(10, 40, 5)
+withinVAR = seq(5, 100, 5)
+
+scenarios = expand.grid(power, betweenVAR, withinVAR, alpha0)
+names(scenarios) = c("Power", "Variance Between Groups", "Variance Within Groups", "Alpha")
+
+n = unlist(mapply(power.anova.test,
+                  groups = 3,
+                  between.var = scenarios$`Variance Between Groups`,
+                  within.var = scenarios$`Variance Within Groups`,
+                  power = scenarios$Power)["n", ])
+
+scenarios = cbind(scenarios, n)
+scenarios
+
+ggplot(scenarios, aes(x=`Variance Within Groups`, y=n, color = `Variance Between Groups`)) + geom_point() +
+  ggtitle("Required n for 0.9 Power as Variance Within Groups Increases") + theme_bw()
+```
+
+###COVID-19###
+```{r}
+covid <- read.csv("/Users/ajaypatel21/Downloads/covid-19-data-master/us-states.csv")
+covid
+```
+
+
+```{r}
+all_covid <- covid %>%
+  group_by(state) %>%
+  summarise(avg_deaths = mean(deaths), 
+            total_deaths = sum(deaths), 
+            total_cases = sum(cases),
+            n_days = n(), 
+            var_deaths = var(deaths)) %>%
+  arrange(avg_deaths)
+
+all_covid
+```
+F test interpretation: 
+
+Null Hypothesis: Each of the 55 territories in the USA have seen the same average deaths/day due to COVID -19. 
+
+Alternate Hypothesis: At least one territory has seen significantly different average deaths/day due to COVID-19. 
+
+With an F-statistic of 96.76, coming from an F(54, 4799) distribution under the null, we get a p-value very close to 0. This gives us strong evidence to conclude that at least one state has seen significantly different deaths/day due to COVID-19 than others. Below is a table detailing some of the lowest and highest deaths/day across the country with accompanying confidence intervals comparing the difference between them. 
+```{r}
+covid_anova <- aov(deaths ~ state, data=covid)
+summary(covid_anova)
+tukey <- TukeyHSD(covid_anova)
+significant_tukey <- data.frame(tukey$state) %>%
+  mutate(states = row.names(.)) %>%
+  filter(p.adj <= .00003367) %>%
+  mutate(abs_diff = abs(diff)) %>%
+  arrange(-abs(diff)) %>%
+  select(states, abs_diff, diff,lwr, upr, p.adj)
+significant_tukey
+
+high_death_places <- covid %>%
+  filter(state == "New York" | state == "New Jersey" | state == "Northern Mariana Islands" | state == "California")
+ggplot(data = high_death_places, aes(x = state, y = deaths)) + geom_boxplot() + theme_bw()
+
+```
+These tukey adjusted intervals provide interesting results. They are organized with the death/day differences largest in magnitude at the top. The biggest observed difference in deaths/day between US territories, not surprisingly, contained New York. Specifically it was New York - Northern Mariana Islands. To be honest, we had never heard of the Northern Mariana Islands before, meaning it is likely an area with low travel to and from the islands. This means there are less opportunities for COVID-19 to establish its roots in Northern Mariana Islands. In addition, the population density in these islands is low, ranking 208 in a list of countries and dependencies by population density. This means that people are naturally not clumped together, so social distancing is easier practiced. New York, on the other hand, is very densely populated. It is the most dense city in the USA. People also travel internationally to and from New York regularly, giving COVID-19 many opportunities to establish itself. It is important to note that COVID-19 spread is very time sensitive, these average deaths/day can and will change drastically in different areas as COVID-19 goes through ebs and flows in different areas. ANOVA may not be the best method for analyzing this data. It provides answers to this specific question of whether deaths/day differs in different states, but we didn't need an ANOVA necessarily to know that New York has been harder affected than many other states. Time series analysis of the data would likely be useful, but our expertise do not lie in this area. The observed estimate for difference in average deaths/day between New York and the Mariana Islands was 13,641. That is a lot of people. The sheer number of people in New York makes it easier for there to be higher deaths/day than Mariana Islands. As you continue down the list, New York becomes a growing theme. New York holds the 54 largest observed difference in deaths/day... meaning the difference in deaths/day in New York compared to any other state/territory is higher than the difference in deaths/day for any two states not involving New York. 
+
+Next up is New Jersey. The observed difference between New Jersey deaths/day and other state deaths/day were the next 51 in highest magnitude. Meaning New York and New Jersey differences accounted for the top 106 observed differences. These two states have been in the news a lot regarding the death toll, so these results generally make sense. We didn't expect, however, to see so many of the largest observed differences taking place in these two states. Next, Michigan appears in the list a decent amount, another state with high death tolls. After that it is a mixed bag. Definitely the most important takeaway from these comparisons is just how bad the virus has been for New York and New Jersey, two densely populated and highly travelled areas. Luckily, deaths/day in these areas has been steadily decreasing since about halfway through April (as shown in this graphic: https://www1.nyc.gov/site/doh/covid/covid-19-data-deaths.page). Deaths/day in other areas of the world and country have been increasing, however, so it is important to monitor this and update the actions we are taking societally in a timely manner. Again, these drastic changes in deaths/day over time gives us reason to think time series analysis would be useful (we don't exactly know what time series analysis entails, but it seems like it would pertain to this). 
+
+We didn't expect, however, to see so many of the largest observed differences taking place in these two states. 
+To visually represent this, we created box plots for the reported deaths each day in New Jersey, New York, California and the Northern Mariana Islands. The boxplots for New York and New Jersey are pretty staggering. They tower over the plot for California (another dense, highly travelled state). New Jersey's box plot, in comparison to New York's, even looks small, with the median of New York being more than double that of New Jersey. After New York and New Jersey, Michigan appears in the list a decent amount, another state with high death tolls. 
+
+After that it is a mixed bag.
+
+###Bootstrapping Sample Mean###
+We wanted to continue to incorporate concepts covered in this class to look at the COVID-19 data to find interesting and insightful conclusions. This simulation utilizes the bootstrapping method to create a confidence interval for the true overall proportion of deaths/cases. Because not everyone who gets the virus gets tested and not all people who die from the virus are necessarily confirmed cases, these numbers must be considered rough estimates. The probability of a person getting COVID-19 and dying is also based on a variety of underlying factors such as age, health, smoking status, etc. This estimate, however, provides a decent guess for the probability of death for a completely random person who has been confirmed. Our confidence interval ranged from 3.63% to 4.71%, meaning we are 95% confident that the true proportion of confirmed deaths/cases for the COVID-19 in America is between 3.63% and 4.71%. The pivotal and percentile intervals each yielded very similar intervals. Again, these intervals must be taken as *estimates* due to the variety of factors that could lead to data flaws.
+```{r}
+all_covid$prop_deaths <- all_covid$total_deaths / all_covid$total_cases
+x = all_covid$prop_deaths
+n = length(all_covid$prop_deaths)
+Nrep = 10000
+xbar = rep(NA, Nrep)
+
+for (r in 1:Nrep) {
+  y = sample(x, n, replace = TRUE)
+  xbar[r] = mean(y)
+}
+
+hist(all_covid$prop_deaths)
+
+hist(xbar)
+abline(v = c(mean(x), mean(xbar), quantile(xbar, c(0.025, 0.975))),
+             col = c("seagreen", "skyblue", "orange", "orange"), lwd = 2)
+paste("Mean:", mean(x))
+paste("SD:", sd(xbar))
+paste("95% CI:", mean(x) + 2 * c(-1, 1) * sd(xbar))
+paste("95% Percentile Interval:", quantile(xbar, c(0.025, 0.975)))
+paste("95% Pivotal Interval:", 2 * mean(x) - quantile(xbar, c(0.975, 0.025)))
+```
+
+###Future Analyses###
+In the future, it would be interesting to match the deaths due to COVID-19 to a distribution. For instance, match the chart on this page https://www1.nyc.gov/site/doh/covid/covid-19-data-deaths.page to a distribution. A lot of talk has been made of this idea of "flattening the curve," it would be interesting to look at different distributions of death due to COVID-19 by state and see how effective we have been at "flattening to curve." As time goes on, further analysis of how deaths differ in different states  will be interesting. We recognize that the ANOVA test ran earlier to examine whether mean deaths/day differs by state is very time dependent. There is likely some time series analyses that could be run with these data. States like New York and New Jersey provide blueprints for what the spike of COVID-19 deaths could look like in a state, possibly mapping the deaths in a state that is having an increased amount of deaths/day to see whether their trend is following New York would be interesting (something like the chart at this website: https://www.vox.com/2020/4/28/21240381/coronavirus-sweden-death-rate-cases-new-york ). 
+
+Finally, accumulating data about the proportion of people who get COVID-19 and die from it is very important. This would allow us to map out probabilities of fatality for people of ranging demographics. This has to start, however, with wide-scale testing for COVID-19. Currently there are many people who suspect they have COVID-19, but it is never serious enough to get tested, meaning there are people who survive COVIDD-19 but were not included in the proportion of deaths/cases. Wide-scale testing would at least give us the opportunity to accurately answer the question of the probability of fatality, which is a question whose answer would provide a lot of decision making utility. 
